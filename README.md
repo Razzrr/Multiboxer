@@ -23,17 +23,79 @@ A customizable multiboxing application for Windows, built with C# and WPF. This 
 
 ## Requirements
 
-- Windows 10 or later
-- .NET 8.0 Runtime
+### For Running
+- Windows 10 or later (x64)
+- [.NET 8.0 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0)
 - Administrator privileges (required for virtual file redirection)
-- Visual Studio 2022 (for development)
+
+### For Building
+- [.NET 8.0 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- Visual Studio 2022 (optional, for IDE development)
 
 ## Building
 
+### Option 1: Command Line (Recommended)
+
+```bash
+# Clone the repository
+git clone https://github.com/Razzrr/Multiboxer.git
+cd Multiboxer
+
+# Restore dependencies
+dotnet restore
+
+# Build in Debug mode
+dotnet build
+
+# Build in Release mode
+dotnet build -c Release
+
+# Run the application
+dotnet run --project src/Multiboxer.App
+```
+
+### Option 2: Visual Studio 2022
+
 1. Open `Multiboxer.sln` in Visual Studio 2022
-2. Restore NuGet packages
-3. Build solution (Ctrl+Shift+B)
-4. Run `Multiboxer.App`
+2. Restore NuGet packages (automatic or via Tools → NuGet Package Manager → Restore)
+3. Select **Debug** or **Release** configuration
+4. Build solution (`Ctrl+Shift+B`)
+5. Run with `F5` (debug) or `Ctrl+F5` (without debugging)
+
+### Publishing a Release Build
+
+Create a self-contained executable that doesn't require .NET runtime installed:
+
+```bash
+# Single-file executable (recommended for distribution)
+dotnet publish src/Multiboxer.App -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o ./publish
+
+# Framework-dependent (smaller size, requires .NET 8.0 runtime)
+dotnet publish src/Multiboxer.App -c Release -r win-x64 --self-contained false -o ./publish
+```
+
+Output will be in the `./publish` folder.
+
+### Running Tests
+
+```bash
+# Run all tests
+dotnet test
+
+# Run tests with verbose output
+dotnet test -v normal
+
+# Run specific test project
+dotnet test tests/Multiboxer.Tests
+```
+
+### Build Output Locations
+
+| Configuration | Location |
+|---------------|----------|
+| Debug | `artifacts/bin/Multiboxer.App/debug/` |
+| Release | `artifacts/bin/Multiboxer.App/release/` |
+| Published | `./publish/` (or custom -o path) |
 
 ## Project Structure
 
