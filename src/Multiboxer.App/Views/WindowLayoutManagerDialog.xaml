@@ -1,0 +1,268 @@
+<Window x:Class="Multiboxer.App.Views.WindowLayoutManagerDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Window Layout Manager"
+        Height="850" Width="1350"
+        WindowStartupLocation="CenterOwner"
+        Background="#F5F5F5">
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,16">
+            <TextBlock Text="Window Layout Manager" FontSize="20" FontWeight="SemiBold" />
+            <TextBlock Text="Define preset layouts for your game windows. Each slot has a foreground (main) and background (thumbnail) position."
+                       Foreground="Gray" TextWrapping="Wrap" Margin="0,4,0,0" />
+        </StackPanel>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="180" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="420" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Layout List -->
+            <GroupBox Grid.Column="0" Header="Saved Layouts" Margin="0,0,8,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <ListBox x:Name="LayoutsListBox"
+                             SelectionChanged="LayoutsListBox_SelectionChanged"
+                             BorderThickness="0" />
+
+                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,8,0,0">
+                        <Button Content="New" Click="NewLayout_Click" Width="50" />
+                        <Button Content="Delete" Click="DeleteLayout_Click" Width="50" Margin="4,0,0,0" />
+                    </StackPanel>
+                </Grid>
+            </GroupBox>
+
+            <!-- Layout Editor -->
+            <GroupBox Grid.Column="1" Header="Layout Editor">
+                <Grid Margin="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Layout Name -->
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,12">
+                        <TextBlock Text="Layout Name:" VerticalAlignment="Center" Width="100" />
+                        <TextBox x:Name="LayoutNameTextBox" Width="200" />
+                    </StackPanel>
+
+                    <!-- Quick Setup -->
+                    <GroupBox Grid.Row="1" Header="Quick Setup" Margin="0,0,0,12">
+                        <StackPanel Margin="8">
+                            <!-- Row 1: Basic settings -->
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="Slots:" VerticalAlignment="Center" Width="50" />
+                                <ComboBox x:Name="SlotCountComboBox" Width="60" SelectedIndex="0">
+                                    <ComboBoxItem Content="6" />
+                                    <ComboBoxItem Content="12" />
+                                    <ComboBoxItem Content="18" />
+                                    <ComboBoxItem Content="24" />
+                                    <ComboBoxItem Content="30" />
+                                    <ComboBoxItem Content="36" />
+                                    <ComboBoxItem Content="42" />
+                                    <ComboBoxItem Content="48" />
+                                    <ComboBoxItem Content="54" />
+                                    <ComboBoxItem Content="60" />
+                                    <ComboBoxItem Content="66" />
+                                    <ComboBoxItem Content="72" />
+                                </ComboBox>
+                                <TextBlock Text="Style:" VerticalAlignment="Center" Width="40" Margin="12,0,0,0" />
+                                <ComboBox x:Name="StyleComboBox" Width="140" SelectionChanged="StyleComboBox_SelectionChanged">
+                                    <ComboBoxItem Content="Horizontal (bottom)" IsSelected="True" />
+                                    <ComboBoxItem Content="Vertical (right)" />
+                                    <ComboBoxItem Content="Grid (equal size)" />
+                                    <ComboBoxItem Content="Stacked (same pos)" />
+                                </ComboBox>
+                                <TextBlock x:Name="ScreenInfoText" Text="" VerticalAlignment="Center" Margin="12,0,0,0" Foreground="Gray" FontSize="11" />
+                            </StackPanel>
+
+                            <!-- Row 2: Main region settings -->
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <TextBlock Text="Main Region:" VerticalAlignment="Center" Width="80" FontWeight="SemiBold" />
+                                <RadioButton x:Name="MainAutoRadio" Content="Auto (fill remaining)" IsChecked="True" VerticalAlignment="Center" />
+                                <RadioButton x:Name="MainCustomRadio" Content="Custom:" Margin="16,0,8,0" VerticalAlignment="Center" />
+                                <TextBox x:Name="MainWidthTextBox" Text="1920" Width="50" IsEnabled="{Binding IsChecked, ElementName=MainCustomRadio}" />
+                                <TextBlock Text="x" VerticalAlignment="Center" Margin="4,0" />
+                                <TextBox x:Name="MainHeightTextBox" Text="1080" Width="50" IsEnabled="{Binding IsChecked, ElementName=MainCustomRadio}" />
+                            </StackPanel>
+
+                            <!-- Row 3: Thumbnail settings -->
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <TextBlock Text="Thumbnails:" VerticalAlignment="Center" Width="80" FontWeight="SemiBold" />
+                                <RadioButton x:Name="ThumbAutoRadio" Content="Auto-fit" IsChecked="True" VerticalAlignment="Center"
+                                             ToolTip="Automatically calculate thumbnail size to fit all slots" />
+                                <RadioButton x:Name="ThumbCustomRadio" Content="Size:" Margin="16,0,8,0" VerticalAlignment="Center" />
+                                <TextBox x:Name="ThumbnailWidthTextBox" Text="320" Width="45" IsEnabled="{Binding IsChecked, ElementName=ThumbCustomRadio}" />
+                                <TextBlock Text="x" VerticalAlignment="Center" Margin="4,0" />
+                                <TextBox x:Name="ThumbnailHeightTextBox" Text="180" Width="45" IsEnabled="{Binding IsChecked, ElementName=ThumbCustomRadio}" />
+                                <TextBlock Text="Rows:" VerticalAlignment="Center" Margin="12,0,4,0" />
+                                <ComboBox x:Name="ThumbnailRowsComboBox" Width="45" SelectedIndex="0">
+                                    <ComboBoxItem Content="1" />
+                                    <ComboBoxItem Content="2" />
+                                    <ComboBoxItem Content="3" />
+                                    <ComboBoxItem Content="4" />
+                                </ComboBox>
+                            </StackPanel>
+
+                            <!-- Row 4: Aspect ratio and gap -->
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <TextBlock Text="Aspect Ratio:" VerticalAlignment="Center" Width="80" />
+                                <ComboBox x:Name="AspectRatioComboBox" Width="80" SelectedIndex="0">
+                                    <ComboBoxItem Content="16:9" />
+                                    <ComboBoxItem Content="16:10" />
+                                    <ComboBoxItem Content="4:3" />
+                                    <ComboBoxItem Content="21:9" />
+                                </ComboBox>
+                                <TextBlock Text="Gap:" VerticalAlignment="Center" Margin="16,0,4,0" />
+                                <TextBox x:Name="GapTextBox" Text="0" Width="35" ToolTip="Pixels between thumbnails" />
+                                <TextBlock Text="px" VerticalAlignment="Center" Margin="4,0,0,0" />
+                                <Button Content="Generate Layout" Click="GenerateLayout_Click" Margin="20,0,0,0" Padding="16,4"
+                                        Background="#2196F3" Foreground="White" FontWeight="SemiBold" />
+                            </StackPanel>
+
+                            <!-- Row 5: Capture -->
+                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                <Button Content="Capture Current Window Positions" Click="CapturePositions_Click" Padding="8,4"
+                                        ToolTip="Capture the current window positions from running game windows" />
+                            </StackPanel>
+                        </StackPanel>
+                    </GroupBox>
+
+                    <!-- Slot Regions -->
+                    <GroupBox Grid.Row="2" Header="Slot Regions">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <ItemsControl x:Name="SlotRegionsItemsControl">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border BorderBrush="#DDD" BorderThickness="0,0,0,1" Padding="8">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="60" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+
+                                                <TextBlock Text="{Binding SlotLabel}" FontWeight="SemiBold" VerticalAlignment="Center" />
+
+                                                <!-- Foreground Region -->
+                                                <StackPanel Grid.Column="1" Margin="8,0">
+                                                    <TextBlock Text="Foreground (Main)" FontSize="11" Foreground="Gray" />
+                                                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                                        <TextBlock Text="X:" VerticalAlignment="Center" Width="20" />
+                                                        <TextBox Text="{Binding ForeX, Mode=TwoWay}" Width="50" />
+                                                        <TextBlock Text="Y:" VerticalAlignment="Center" Width="20" Margin="8,0,0,0" />
+                                                        <TextBox Text="{Binding ForeY, Mode=TwoWay}" Width="50" />
+                                                        <TextBlock Text="W:" VerticalAlignment="Center" Width="20" Margin="8,0,0,0" />
+                                                        <TextBox Text="{Binding ForeWidth, Mode=TwoWay}" Width="50" />
+                                                        <TextBlock Text="H:" VerticalAlignment="Center" Width="20" Margin="8,0,0,0" />
+                                                        <TextBox Text="{Binding ForeHeight, Mode=TwoWay}" Width="50" />
+                                                    </StackPanel>
+                                                </StackPanel>
+
+                                                <!-- Background Region -->
+                                                <StackPanel Grid.Column="2" Margin="8,0">
+                                                    <TextBlock Text="Background (Thumbnail)" FontSize="11" Foreground="Gray" />
+                                                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                                        <TextBlock Text="X:" VerticalAlignment="Center" Width="20" />
+                                                        <TextBox Text="{Binding BackX, Mode=TwoWay}" Width="50" />
+                                                        <TextBlock Text="Y:" VerticalAlignment="Center" Width="20" Margin="8,0,0,0" />
+                                                        <TextBox Text="{Binding BackY, Mode=TwoWay}" Width="50" />
+                                                        <TextBlock Text="W:" VerticalAlignment="Center" Width="20" Margin="8,0,0,0" />
+                                                        <TextBox Text="{Binding BackWidth, Mode=TwoWay}" Width="50" />
+                                                        <TextBlock Text="H:" VerticalAlignment="Center" Width="20" Margin="8,0,0,0" />
+                                                        <TextBox Text="{Binding BackHeight, Mode=TwoWay}" Width="50" />
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </GroupBox>
+
+                    <!-- Preview / Apply -->
+                    <StackPanel Grid.Row="3" Margin="0,12,0,0">
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="Preview Layout" Click="PreviewLayout_Click" Padding="12,6" />
+                            <Button Content="Apply to Windows" Click="ApplyLayout_Click" Padding="12,6" Margin="8,0,0,0"
+                                    Background="#2196F3" Foreground="White"
+                                    ToolTip="Resize actual game windows (may not work with all games)" />
+                            <Button Content="Save Layout" Click="SaveLayout_Click" Padding="12,6" Margin="8,0,0,0"
+                                    Background="#4CAF50" Foreground="White" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <Button Content="Show Thumbnails (Video FX)" Click="ShowThumbnails_Click" Padding="12,6"
+                                    Background="#9C27B0" Foreground="White"
+                                    ToolTip="Show DWM thumbnails of game windows (like ISBoxer Video FX)" />
+                            <Button Content="Hide Thumbnails" Click="HideThumbnails_Click" Padding="12,6" Margin="8,0,0,0"
+                                    ToolTip="Hide all thumbnail windows" />
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+            </GroupBox>
+
+            <!-- Layout Preview -->
+            <GroupBox Grid.Column="2" Header="Layout Preview" Margin="8,0,0,0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" MinHeight="400" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Preview Controls -->
+                    <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="8">
+                        <TextBlock Text="Show:" VerticalAlignment="Center" />
+                        <RadioButton x:Name="ShowBackgroundRadio" Content="Background"
+                                     IsChecked="True" Margin="8,0,0,0"
+                                     Checked="PreviewMode_Changed" />
+                        <RadioButton x:Name="ShowForegroundRadio" Content="Foreground"
+                                     Margin="8,0,0,0"
+                                     Checked="PreviewMode_Changed" />
+                        <RadioButton x:Name="ShowBothRadio" Content="Both"
+                                     Margin="8,0,0,0"
+                                     Checked="PreviewMode_Changed" />
+                    </StackPanel>
+
+                    <!-- Preview Canvas -->
+                    <Border Grid.Row="1" Background="#1a1a1a" Margin="4" CornerRadius="4">
+                        <Canvas x:Name="PreviewCanvas" ClipToBounds="True" />
+                    </Border>
+
+                    <!-- Legend -->
+                    <StackPanel Grid.Row="2" Margin="8">
+                        <StackPanel Orientation="Horizontal">
+                            <Border Width="16" Height="16" Background="#4CAF50" CornerRadius="2" />
+                            <TextBlock Text="Foreground (Main)" Margin="4,0,12,0" VerticalAlignment="Center" />
+                            <Border Width="16" Height="16" Background="#2196F3" CornerRadius="2" />
+                            <TextBlock Text="Background (Thumbnail)" Margin="4,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <TextBlock x:Name="PreviewInfoText" Text="" Foreground="Gray" Margin="0,4,0,0" FontSize="11" />
+                    </StackPanel>
+                </Grid>
+            </GroupBox>
+        </Grid>
+
+        <!-- Footer -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Content="Close" Click="Close_Click" Width="80" IsCancel="True" />
+        </StackPanel>
+    </Grid>
+</Window>

@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Multiboxer.App</RootNamespace>
+    <ApplicationIcon>Assets\icon.ico</ApplicationIcon>
+    <AssemblyTitle>EQBZ Multiboxer</AssemblyTitle>
+    <Product>EQBZ Multiboxer</Product>
+    <Company>EQBZ</Company>
+    <Copyright>Copyright (C) 2024-2025 EQBZ</Copyright>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\logo.png" />
+    <Resource Include="Assets\icon.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Multiboxer.Native\Multiboxer.Native.csproj" />
+    <ProjectReference Include="..\Multiboxer.Core\Multiboxer.Core.csproj" />
+    <ProjectReference Include="..\Multiboxer.Overlay\Multiboxer.Overlay.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
+    <PackageReference Include="Hardcodet.NotifyIcon.Wpf" Version="1.1.0" />
+  </ItemGroup>
+
+</Project>

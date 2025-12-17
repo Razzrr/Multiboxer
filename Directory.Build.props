@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <!-- Redirect all project outputs to a single artifacts folder -->
+    <BaseOutputPath>artifacts\</BaseOutputPath>
+  </PropertyGroup>
+</Project>
+

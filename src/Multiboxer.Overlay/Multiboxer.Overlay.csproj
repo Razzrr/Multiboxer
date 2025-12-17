@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Multiboxer.Overlay</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Multiboxer.Native\Multiboxer.Native.csproj" />
+    <ProjectReference Include="..\Multiboxer.Core\Multiboxer.Core.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,17 @@
+{
+  "name": "EverQuest",
+  "game": "EverQuest",
+  "path": "D:\\Games\\EverQuest",
+  "executable": "eqgame.exe",
+  "arguments": "",
+  "useVirtualFiles": false,
+  "virtualFiles": [
+    {
+      "pattern": "eqclient.ini",
+      "replacement": "eqclient.{slot}.ini",
+      "exact": false
+    }
+  ],
+  "runAsAdmin": false,
+  "launchDelay": 0
+}

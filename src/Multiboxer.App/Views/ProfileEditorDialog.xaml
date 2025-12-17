@@ -1,0 +1,143 @@
+<Window x:Class="Multiboxer.App.Views.ProfileEditorDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Profile Editor"
+        Height="700" Width="550"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        ResizeMode="NoResize"
+        Background="{StaticResource BackgroundBrush}">
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+                <!-- Profile Name -->
+                <TextBlock Text="Profile Name" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <TextBox x:Name="ProfileNameTextBox" Margin="0,0,0,16" />
+
+                <!-- Game Name -->
+                <TextBlock Text="Game" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <TextBox x:Name="GameNameTextBox" Margin="0,0,0,16" />
+
+                <!-- Path -->
+                <TextBlock Text="Game Path" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <Grid Margin="0,0,0,16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="PathTextBox" Grid.Column="0" />
+                    <Button x:Name="BrowsePathButton"
+                            Grid.Column="1"
+                            Content="Browse..."
+                            Margin="8,0,0,0"
+                            Padding="12,6"
+                            Click="BrowsePath_Click" />
+                </Grid>
+
+                <!-- Executable -->
+                <TextBlock Text="Executable (Launcher)" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="ExecutableTextBox" Grid.Column="0" />
+                    <Button x:Name="BrowseExeButton"
+                            Grid.Column="1"
+                            Content="Browse..."
+                            Margin="8,0,0,0"
+                            Padding="12,6"
+                            Click="BrowseExe_Click" />
+                </Grid>
+                <TextBlock Text="e.g., LaunchPad.exe or eqgame.exe" Foreground="Gray" FontSize="11" Margin="0,0,0,16" />
+
+                <!-- Game Executable (for launchers) -->
+                <TextBlock Text="Game Executable (if different from launcher)" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBox x:Name="GameExecutableTextBox" Grid.Column="0" />
+                    <Button x:Name="BrowseGameExeButton"
+                            Grid.Column="1"
+                            Content="Browse..."
+                            Margin="8,0,0,0"
+                            Padding="12,6"
+                            Click="BrowseGameExe_Click" />
+                </Grid>
+                <TextBlock Text="Leave empty if launcher IS the game. Example: eqgame.exe (when launcher is LaunchPad.exe)"
+                           Foreground="Gray" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,16" />
+
+                <!-- Arguments -->
+                <TextBlock Text="Command Line Arguments" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <TextBox x:Name="ArgumentsTextBox" Margin="0,0,0,16" />
+
+                <!-- Options -->
+                <TextBlock Text="Options" FontWeight="SemiBold" Margin="0,0,0,8" />
+                <CheckBox x:Name="RunAsAdminCheckBox" Content="Run as Administrator" Margin="0,0,0,8" />
+
+                <!-- Launch Delay -->
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                    <TextBlock Text="Launch Delay (ms):" VerticalAlignment="Center" Width="120" />
+                    <TextBox x:Name="LaunchDelayTextBox" Text="0" Width="80" />
+                </StackPanel>
+
+                <!-- Window Detection -->
+                <TextBlock Text="Window Detection (Optional)" FontWeight="SemiBold" Margin="0,0,0,8" />
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                    <TextBlock Text="Window Class:" VerticalAlignment="Center" Width="120" />
+                    <TextBox x:Name="WindowClassTextBox" Width="200" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                    <TextBlock Text="Title Pattern:" VerticalAlignment="Center" Width="120" />
+                    <TextBox x:Name="WindowTitlePatternTextBox" Width="200" />
+                </StackPanel>
+
+                <!-- Virtual Files -->
+                <TextBlock Text="Virtual File Redirection" FontWeight="SemiBold" Margin="0,0,0,8" />
+                <CheckBox x:Name="UseVirtualFilesCheckBox" Content="Enable per-slot configuration files" Margin="0,0,0,8" />
+                <TextBlock Text="Maps files like eqclient.ini to eqclient.1.ini, eqclient.2.ini, etc. Requires Admin."
+                           Foreground="Gray" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8" />
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                    <TextBlock Text="File Pattern:" VerticalAlignment="Center" Width="120" />
+                    <TextBox x:Name="VirtualFilePatternTextBox" Width="200" />
+                    <Button Content="Add" Padding="12,4" Margin="8,0,0,0" Click="AddVirtualFile_Click" />
+                </StackPanel>
+                <TextBlock Text="Example: eqclient.ini → eqclient.{slot}.ini" Foreground="Gray" FontSize="11" Margin="0,0,0,8" />
+                <ListBox x:Name="VirtualFilesListBox" Height="80" Margin="0,0,0,8">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Pattern}" />
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                <Button Content="Remove Selected" HorizontalAlignment="Left" Padding="12,4" Click="RemoveVirtualFile_Click" />
+
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Buttons -->
+        <StackPanel Grid.Row="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="0,20,0,0">
+            <Button x:Name="SaveButton"
+                    Content="Save"
+                    Style="{StaticResource PrimaryButton}"
+                    Width="100"
+                    Click="Save_Click" />
+            <Button x:Name="CancelButton"
+                    Content="Cancel"
+                    Width="100"
+                    Margin="12,0,0,0"
+                    Click="Cancel_Click" />
+        </StackPanel>
+    </Grid>
+</Window>

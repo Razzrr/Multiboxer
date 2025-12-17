@@ -1,0 +1,40 @@
+{
+  "version": "1.0",
+  "profiles": [],
+  "hotkeys": {
+    "slotHotkeys": ["F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12", "End"],
+    "previousWindow": "Ctrl+Alt+Z",
+    "nextWindow": "Ctrl+Alt+X",
+    "globalHotkeysEnabled": true
+  },
+  "layout": {
+    "activeLayout": "Horizontal",
+    "options": {
+      "swapOnActivate": false,
+      "swapOnHotkeyFocused": true,
+      "leaveHole": false,
+      "avoidTaskbar": true,
+      "makeBorderless": true,
+      "rescaleWindows": true,
+      "focusFollowsMouse": false,
+      "monitorIndex": -1
+    },
+    "customLayouts": []
+  },
+  "highlighter": {
+    "showBorder": true,
+    "showNumber": true,
+    "borderColor": "#FF0000",
+    "borderThickness": 3
+  },
+  "renameWindows": true,
+  "performance": {
+    "lockAffinity": false,
+    "backgroundMaxFps": 30,
+    "foregroundMaxFps": 0
+  },
+  "window": {
+    "width": 900,
+    "height": 600
+  }
+}
