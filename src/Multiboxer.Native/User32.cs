@@ -8,6 +8,12 @@ namespace Multiboxer.Native;
 /// </summary>
 public static class User32
 {
+    // Window z-order constants
+    public static readonly IntPtr HWND_TOP = IntPtr.Zero;
+    public static readonly IntPtr HWND_BOTTOM = new IntPtr(1);
+    public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
+    public static readonly IntPtr HWND_NOTOPMOST = new IntPtr(-2);
+
     #region Window Position and Size
 
     [DllImport("user32.dll", SetLastError = true)]

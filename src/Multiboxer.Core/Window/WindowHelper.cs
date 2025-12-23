@@ -304,6 +304,62 @@ public static class WindowHelper
     }
 
     /// <summary>
+    /// JMB-style: Batch move windows WITHOUT resizing (SWP_NOSIZE)
+    /// Windows stay at their current size, only position changes
+    /// </summary>
+    public static void SetWindowPositionsBatchedNoSize(IReadOnlyList<(IntPtr hWnd, int x, int y)> windowPositions)
+    {
+        Debug.WriteLine($"SetWindowPositionsBatchedNoSize: {windowPositions.Count} windows (position only)");
+
+        if (windowPositions.Count == 0)
+            return;
+
+        var hdwp = User32.BeginDeferWindowPos(windowPositions.Count);
+        if (hdwp == IntPtr.Zero)
+        {
+            Debug.WriteLine($"  BeginDeferWindowPos FAILED, using fallback");
+            foreach (var (hWnd, x, y) in windowPositions)
+            {
+                if (hWnd == IntPtr.Zero) continue;
+                User32.SetWindowPos(hWnd, IntPtr.Zero, x, y, 0, 0,
+                    SetWindowPosFlags.SWP_NOSIZE | SetWindowPosFlags.SWP_NOZORDER | SetWindowPosFlags.SWP_NOACTIVATE);
+            }
+            return;
+        }
+
+        try
+        {
+            foreach (var (hWnd, x, y) in windowPositions)
+            {
+                if (hWnd == IntPtr.Zero)
+                    continue;
+
+                // SWP_NOSIZE = don't resize, only move position
+                var flags = SetWindowPosFlags.SWP_NOSIZE |
+                            SetWindowPosFlags.SWP_NOZORDER |
+                            SetWindowPosFlags.SWP_NOACTIVATE;
+
+                Debug.WriteLine($"  DeferWindowPos (NOSIZE): hwnd=0x{hWnd:X} -> ({x},{y})");
+                hdwp = User32.DeferWindowPos(hdwp, hWnd, IntPtr.Zero, x, y, 0, 0, flags);
+                if (hdwp == IntPtr.Zero)
+                {
+                    Debug.WriteLine($"    DeferWindowPos FAILED for hwnd=0x{hWnd:X}");
+                    User32.SetWindowPos(hWnd, IntPtr.Zero, x, y, 0, 0,
+                        SetWindowPosFlags.SWP_NOSIZE | SetWindowPosFlags.SWP_NOZORDER | SetWindowPosFlags.SWP_NOACTIVATE);
+                }
+            }
+        }
+        finally
+        {
+            if (hdwp != IntPtr.Zero)
+            {
+                var result = User32.EndDeferWindowPos(hdwp);
+                Debug.WriteLine($"  EndDeferWindowPos result: {result}");
+            }
+        }
+    }
+
+    /// <summary>
     /// Get the desktop window handle
     /// </summary>
     public static IntPtr GetDesktopWindow()

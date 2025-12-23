@@ -6,7 +6,6 @@ using Multiboxer.Core.Layout;
 using Multiboxer.Core.Performance;
 using Multiboxer.Core.Slots;
 using Multiboxer.Core.VirtualFiles;
-using Multiboxer.Core.Windowing;
 using Multiboxer.Overlay;
 
 namespace Multiboxer.App;
@@ -26,10 +25,6 @@ public partial class App : Application
     public static AffinityManager AffinityManager { get; private set; } = null!;
     public static TrayIconService TrayIconService { get; private set; } = null!;
     public static VirtualFileManager VirtualFileManager { get; private set; } = null!;
-
-    // Windowing infrastructure
-    public static MonitorRouter MonitorRouter { get; private set; } = null!;
-    public static JsonlLogger DiagnosticLogger { get; private set; } = null!;
 
     /// <summary>
     /// Flag to indicate batch launch is in progress - disables per-slot layout updates
@@ -176,25 +171,6 @@ public partial class App : Application
         // Create virtual file manager
         var virtualFilesBackupPath = System.IO.Path.Combine(configPath, "virtualfiles_backup");
         VirtualFileManager = new VirtualFileManager(virtualFilesBackupPath);
-
-        // Create diagnostic logger
-        var diagnosticLogPath = System.IO.Path.Combine(configPath, "diagnostic.jsonl");
-        DiagnosticLogger = new JsonlLogger(diagnosticLogPath, true);
-
-        // Create monitor router with routing config from layout options
-        var routingConfig = new RoutingConfig
-        {
-            UseSplitMonitor = LayoutEngine.Options.UseSplitMonitor,
-            ThumbnailMonitorIndex = LayoutEngine.Options.ThumbnailMonitorIndex,
-            ThumbnailColumns = LayoutEngine.Options.ThumbnailColumns,
-            SessionMonitorIndex = LayoutEngine.Options.MonitorIndex,
-            EnableDiagnosticLogging = true
-        };
-        MonitorRouter = new MonitorRouter(routingConfig);
-
-        // Log monitor topology at startup
-        TopologyLogging.LogMonitorTopology(DiagnosticLogger, routingConfig);
-        Debug.WriteLine(TopologyLogging.GetTopologySummary(routingConfig));
     }
 
     private void OnHotkeyPressed(object? sender, HotkeyEventArgs e)
@@ -370,13 +346,10 @@ public partial class App : Application
                     if (LayoutEngine.Options.UseThumbnails)
                     {
                         var activeSlots = SlotManager.GetActiveSlots().ToList();
-                        // BackRegion stores ABSOLUTE screen coordinates - do NOT add offset
-                        // Use MonitorRouter to get the correct thumbnail monitor bounds for clamping
-                        var thumbnailMonitor = MonitorRouter.ResolveThumbnailMonitor();
-                        var bounds = thumbnailMonitor?.WorkingArea;
-                        // Pass 0,0 offset since coordinates are already absolute
+                        // BackRegion stores ABSOLUTE screen coordinates - pass 0,0 offset
+                        var monitor = GetTargetMonitor();
+                        var bounds = monitor?.WorkingArea;
                         ThumbnailManager.ApplyLayout(activeSlots, LayoutEngine.SlotRegions, slotId, 0, 0, bounds);
-                        LogThumbnailLayout(slotId, activeSlots.Count);
                     }
                     else
                     {
@@ -440,11 +413,9 @@ public partial class App : Application
                     if (LayoutEngine.Options.UseThumbnails)
                     {
                         var activeSlots = SlotManager.GetActiveSlots().ToList();
-                        // BackRegion stores ABSOLUTE screen coordinates - do NOT add offset
-                        var thumbnailMonitor = MonitorRouter.ResolveThumbnailMonitor();
-                        var bounds = thumbnailMonitor?.WorkingArea;
+                        var monitor = GetTargetMonitor();
+                        var bounds = monitor?.WorkingArea;
                         ThumbnailManager.ApplyLayout(activeSlots, LayoutEngine.SlotRegions, focusedSlot.Id, 0, 0, bounds);
-                        LogThumbnailLayout(focusedSlot.Id, activeSlots.Count);
                     }
                     else
                     {
@@ -571,11 +542,9 @@ public partial class App : Application
                         if (LayoutEngine.Options.UseThumbnails)
                         {
                             var activeSlots = SlotManager.GetActiveSlots().ToList();
-                            // BackRegion stores ABSOLUTE screen coordinates - do NOT add offset
-                            var thumbnailMonitor = MonitorRouter.ResolveThumbnailMonitor();
-                            var bounds = thumbnailMonitor?.WorkingArea;
+                            var monitor = GetTargetMonitor();
+                            var bounds = monitor?.WorkingArea;
                             ThumbnailManager.ApplyLayout(activeSlots, LayoutEngine.SlotRegions, focusedSlot.Id, 0, 0, bounds);
-                            LogThumbnailLayout(focusedSlot.Id, activeSlots.Count);
                         }
                         else
                         {
@@ -606,33 +575,6 @@ public partial class App : Application
         return Multiboxer.Core.Window.MonitorManager.GetPrimaryMonitor();
     }
 
-    /// <summary>
-    /// Log thumbnail layout application for diagnostics
-    /// </summary>
-    private void LogThumbnailLayout(int foregroundSlotId, int activeSlotCount)
-    {
-        var thumbnailMonitor = MonitorRouter.ResolveThumbnailMonitor();
-        var sessionMonitor = MonitorRouter.ResolveSessionMonitor();
-
-        DiagnosticLogger.Write(new
-        {
-            Event = "ThumbnailLayoutApplied",
-            Timestamp = DateTime.UtcNow,
-            ForegroundSlotId = foregroundSlotId,
-            ActiveSlotCount = activeSlotCount,
-            UseSplitMonitor = LayoutEngine.Options.UseSplitMonitor,
-            SessionMonitor = sessionMonitor?.DeviceName ?? "None",
-            ThumbnailMonitor = thumbnailMonitor?.DeviceName ?? "None",
-            SlotRegions = LayoutEngine.SlotRegions.Select(kvp => new
-            {
-                SlotId = kvp.Key,
-                ForeRegion = $"({kvp.Value.ForeRegion.X},{kvp.Value.ForeRegion.Y}) {kvp.Value.ForeRegion.Width}x{kvp.Value.ForeRegion.Height}",
-                BackRegion = $"({kvp.Value.BackRegion.X},{kvp.Value.BackRegion.Y}) {kvp.Value.BackRegion.Width}x{kvp.Value.BackRegion.Height}"
-            }).ToList()
-        });
-        DiagnosticLogger.Flush();
-    }
-
     protected override void OnExit(ExitEventArgs e)
     {
         // Save settings
@@ -655,7 +597,6 @@ public partial class App : Application
         ThumbnailManager.Clear();
         TrayIconService.Dispose();
         SlotManager.Dispose();
-        DiagnosticLogger?.Dispose();
 
         base.OnExit(e);
     }

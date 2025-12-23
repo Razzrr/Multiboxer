@@ -28,6 +28,11 @@ public class LayoutEngine
     private readonly HashSet<IntPtr> _protectedWindows = new();
     private readonly HashSet<IntPtr> _borderlessApplied = new();
 
+    // Track if initial layout has been applied - subsequent focus changes only swap two windows
+    private bool _initialLayoutApplied = false;
+    // Track parked window positions to avoid redundant moves
+    private readonly Dictionary<int, (int x, int y)> _parkedPositions = new();
+
     /// <summary>
     /// Available layout strategies
     /// </summary>
@@ -233,19 +238,24 @@ public class LayoutEngine
     /// ISBoxer-style layout swap: Move ALL windows to their correct regions based on focus.
     /// - Foreground slot goes to its ForeRegion (large main area)
     /// - All other slots go to their BackRegions (thumbnail strip)
+    ///
+    /// OPTIMIZATION: After initial layout, only swap the two affected windows (old foreground -> parked, new foreground -> ForeRegion)
+    /// This avoids triggering resize events on windows that don't need to move.
     /// </summary>
     public void SwapLayoutOnFocus(int foregroundSlotId)
     {
+        var previousForegroundSlotId = _currentForegroundSlotId;
         _currentForegroundSlotId = foregroundSlotId;
 
         var activeSlots = _slotManager.GetActiveSlots().ToList();
 
         Debug.WriteLine($"========== SwapLayoutOnFocus ==========");
-        Debug.WriteLine($"  Foreground slot: {foregroundSlotId}");
+        Debug.WriteLine($"  Foreground slot: {foregroundSlotId} (previous: {previousForegroundSlotId})");
         Debug.WriteLine($"  Active slots: {activeSlots.Count}");
         Debug.WriteLine($"  Slot regions: {_slotRegions.Count}");
         Debug.WriteLine($"  Template regions: {_templateRegions.Count}");
         Debug.WriteLine($"  MakeBorderless option: {_options.MakeBorderless}");
+        Debug.WriteLine($"  Initial layout applied: {_initialLayoutApplied}");
 
         if (activeSlots.Count == 0)
         {
@@ -281,6 +291,13 @@ public class LayoutEngine
         int parkingIndex = 0;
 
         Debug.WriteLine($"  Target monitor: {targetMonitor?.DeviceName ?? "null"} at ({offsetX},{offsetY}) size {targetMonitor?.Width}x{targetMonitor?.Height}");
+
+        // OPTIMIZATION: If initial layout already applied and we're just switching focus, only move two windows
+        if (_initialLayoutApplied && _options.UseThumbnails && previousForegroundSlotId != 0 && previousForegroundSlotId != foregroundSlotId)
+        {
+            SwapTwoWindows(previousForegroundSlotId, foregroundSlotId, activeSlots, offsetX, offsetY, parkingX, parkingYStart);
+            return;
+        }
 
         // Step 1: Make all windows borderless BEFORE positioning; track which still need it
         var borderlessPending = new List<IntPtr>();
@@ -406,7 +423,141 @@ public class LayoutEngine
             slot.UpdateWindowInfo();
         }
 
+        // Mark initial layout as applied - subsequent focus changes will use optimized path
+        _initialLayoutApplied = true;
+
+        // Store parked positions for optimization
+        foreach (var slot in activeSlots)
+        {
+            if (slot.Id != foregroundSlotId && _options.UseThumbnails)
+            {
+                // Find the parked position we used
+                var idx = activeSlots.Where(s => s.Id != foregroundSlotId).ToList().IndexOf(slot);
+                if (idx >= 0)
+                {
+                    _parkedPositions[slot.Id] = (parkingX, parkingYStart + idx * parkingStep);
+                }
+            }
+        }
+
         Debug.WriteLine($"========== SwapLayoutOnFocus COMPLETE ==========");
+    }
+
+    /// <summary>
+    /// JMB-style optimized swap: Batch move two windows atomically using DeferWindowPos.
+    /// - Previous foreground -> parked position (off-screen)
+    /// - New foreground -> ForeRegion (on-screen) and brought to top via z-order
+    /// Uses SWP_NOSIZE to avoid resize events.
+    /// </summary>
+    private void SwapTwoWindows(int previousSlotId, int newSlotId, List<Slot> activeSlots, int offsetX, int offsetY, int parkingX, int parkingYStart)
+    {
+        Debug.WriteLine($"=== SwapTwoWindows: {previousSlotId} -> {newSlotId} ===");
+
+        var previousSlot = activeSlots.FirstOrDefault(s => s.Id == previousSlotId);
+        var newSlot = activeSlots.FirstOrDefault(s => s.Id == newSlotId);
+
+        if (previousSlot?.MainWindowHandle == IntPtr.Zero && newSlot?.MainWindowHandle == IntPtr.Zero)
+        {
+            Debug.WriteLine("  ERROR: Both slot handles are null!");
+            return;
+        }
+
+        // Get regions
+        _slotRegions.TryGetValue(newSlotId, out var newRegion);
+
+        if (newRegion == null)
+        {
+            Debug.WriteLine($"  ERROR: No region for new slot {newSlotId}");
+            return;
+        }
+
+        // Calculate positions
+        int parkedIdx = activeSlots.Where(s => s.Id != newSlotId).ToList().FindIndex(s => s.Id == previousSlotId);
+        int parkedX = parkingX;
+        int parkedY = parkingYStart + (parkedIdx >= 0 ? parkedIdx : 0) * 100;
+        int foreX = newRegion.ForeRegion.X + offsetX;
+        int foreY = newRegion.ForeRegion.Y + offsetY;
+
+        // Restore new window if minimized (before batching)
+        if (newSlot?.MainWindowHandle != IntPtr.Zero && WindowHelper.IsWindowMinimized(newSlot.MainWindowHandle))
+        {
+            User32.ShowWindow(newSlot.MainWindowHandle, ShowWindowCommand.SW_RESTORE);
+        }
+
+        // JMB-style: Batch both moves in a single DeferWindowPos for atomic update
+        var hdwp = User32.BeginDeferWindowPos(2);
+        if (hdwp == IntPtr.Zero)
+        {
+            Debug.WriteLine("  BeginDeferWindowPos failed, using fallback");
+            // Fallback to individual calls
+            FallbackSwapTwoWindows(previousSlot, newSlot, parkedX, parkedY, foreX, foreY, previousSlotId, newSlotId);
+            return;
+        }
+
+        // Flags: NOSIZE (no resize), DEFERERASE (reduce flicker), ASYNCWINDOWPOS (async)
+        var parkFlags = SetWindowPosFlags.SWP_NOSIZE |
+                        SetWindowPosFlags.SWP_NOZORDER |
+                        SetWindowPosFlags.SWP_NOACTIVATE |
+                        SetWindowPosFlags.SWP_DEFERERASE |
+                        SetWindowPosFlags.SWP_ASYNCWINDOWPOS;
+
+        // Move previous foreground to parked (keep z-order, no activate)
+        if (previousSlot?.MainWindowHandle != IntPtr.Zero)
+        {
+            Debug.WriteLine($"  Deferring slot {previousSlotId} to parked ({parkedX},{parkedY})");
+            hdwp = User32.DeferWindowPos(hdwp, previousSlot.MainWindowHandle, IntPtr.Zero,
+                parkedX, parkedY, 0, 0, parkFlags);
+            _parkedPositions[previousSlotId] = (parkedX, parkedY);
+        }
+
+        // Move new foreground to ForeRegion AND bring to top (HWND_TOP via z-order)
+        if (newSlot?.MainWindowHandle != IntPtr.Zero && hdwp != IntPtr.Zero)
+        {
+            // For foreground: use HWND_TOP to bring to front, no NOZORDER
+            var foreFlags = SetWindowPosFlags.SWP_NOSIZE |
+                            SetWindowPosFlags.SWP_NOACTIVATE |
+                            SetWindowPosFlags.SWP_DEFERERASE |
+                            SetWindowPosFlags.SWP_ASYNCWINDOWPOS;
+
+            Debug.WriteLine($"  Deferring slot {newSlotId} to ForeRegion ({foreX},{foreY}) with HWND_TOP");
+            hdwp = User32.DeferWindowPos(hdwp, newSlot.MainWindowHandle, User32.HWND_TOP,
+                foreX, foreY, 0, 0, foreFlags);
+        }
+
+        // Execute all moves atomically
+        if (hdwp != IntPtr.Zero)
+        {
+            User32.EndDeferWindowPos(hdwp);
+        }
+
+        // Final step: Activate the window (separate from positioning for smoothness)
+        if (newSlot?.MainWindowHandle != IntPtr.Zero)
+        {
+            User32.SetForegroundWindow(newSlot.MainWindowHandle);
+        }
+
+        Debug.WriteLine($"=== SwapTwoWindows COMPLETE ===");
+    }
+
+    /// <summary>
+    /// Fallback for when DeferWindowPos fails
+    /// </summary>
+    private void FallbackSwapTwoWindows(Slot? previousSlot, Slot? newSlot, int parkedX, int parkedY, int foreX, int foreY, int previousSlotId, int newSlotId)
+    {
+        var flags = SetWindowPosFlags.SWP_NOSIZE | SetWindowPosFlags.SWP_NOZORDER | SetWindowPosFlags.SWP_NOACTIVATE;
+
+        if (previousSlot?.MainWindowHandle != IntPtr.Zero)
+        {
+            User32.SetWindowPos(previousSlot.MainWindowHandle, IntPtr.Zero, parkedX, parkedY, 0, 0, flags);
+            _parkedPositions[previousSlotId] = (parkedX, parkedY);
+        }
+
+        if (newSlot?.MainWindowHandle != IntPtr.Zero)
+        {
+            User32.SetWindowPos(newSlot.MainWindowHandle, User32.HWND_TOP, foreX, foreY, 0, 0,
+                SetWindowPosFlags.SWP_NOSIZE | SetWindowPosFlags.SWP_NOACTIVATE);
+            User32.SetForegroundWindow(newSlot.MainWindowHandle);
+        }
     }
 
     /// <summary>
