@@ -30,8 +30,12 @@ public class LayoutEngine
 
     // Track if initial layout has been applied - subsequent focus changes only swap two windows
     private bool _initialLayoutApplied = false;
+
+    // NOTE: Disabled - was used by SwapTwoWindows but never read
+    #if false
     // Track parked window positions to avoid redundant moves
     private readonly Dictionary<int, (int x, int y)> _parkedPositions = new();
+    #endif
 
     /// <summary>
     /// Available layout strategies
@@ -201,13 +205,11 @@ public class LayoutEngine
     }
 
     /// <summary>
-    /// Apply layout with a specific slot as the main (foreground) window.
-    /// ISBoxer-style: Moves ALL windows to their correct regions based on focus.
+    /// JMB-style: Apply layout with a specific slot as the main (foreground) window.
+    /// After initial layout, only swaps two windows (previous foreground and new foreground).
     /// </summary>
     public void ApplyLayoutWithMain(int mainSlotId)
     {
-        _currentForegroundSlotId = mainSlotId;
-
         var activeSlots = _slotManager.GetActiveSlots().ToList();
         if (activeSlots.Count == 0)
             return;
@@ -219,19 +221,120 @@ public class LayoutEngine
             return;
         }
 
-        // If we have slot regions defined, do a full layout swap
-        if (_slotRegions.Count > 0)
+        if (_slotRegions.Count == 0)
         {
-            SwapLayoutOnFocus(mainSlotId);
+            // Fallback: just bring the target window to foreground
+            var foregroundSlot = activeSlots.FirstOrDefault(s => s.Id == mainSlotId);
+            if (foregroundSlot?.MainWindowHandle != IntPtr.Zero)
+            {
+                WindowHelper.ForceForegroundWindow(foregroundSlot.MainWindowHandle);
+            }
             return;
         }
 
-        // Fallback: just bring the target window to foreground
-        var foregroundSlot = activeSlots.FirstOrDefault(s => s.Id == mainSlotId);
-        if (foregroundSlot?.MainWindowHandle != IntPtr.Zero)
+        // JMB-style: If initial layout done, just swap two windows
+        if (_initialLayoutApplied && _options.UseThumbnails && _currentForegroundSlotId != 0 && _currentForegroundSlotId != mainSlotId)
         {
-            WindowHelper.ForceForegroundWindow(foregroundSlot.MainWindowHandle);
+            Debug.WriteLine($"JMB-style swap: {_currentForegroundSlotId} -> {mainSlotId}");
+            JmbStyleSwap(_currentForegroundSlotId, mainSlotId, activeSlots);
+            _currentForegroundSlotId = mainSlotId;
+            return;
         }
+
+        // First time or non-thumbnail mode: do full layout
+        SwapLayoutOnFocus(mainSlotId);
+    }
+
+    /// <summary>
+    /// JMB-style swap:
+    /// - Old foreground -> parked off-screen (SWP_NOSIZE - stays at native resolution)
+    /// - New foreground -> sized and positioned to ForeRegion (resized to fit main area)
+    /// </summary>
+    private void JmbStyleSwap(int oldSlotId, int newSlotId, List<Slot> activeSlots)
+    {
+        var oldSlot = activeSlots.FirstOrDefault(s => s.Id == oldSlotId);
+        var newSlot = activeSlots.FirstOrDefault(s => s.Id == newSlotId);
+
+        _slotRegions.TryGetValue(newSlotId, out var newRegion);
+        if (newRegion == null)
+        {
+            Debug.WriteLine($"  JmbStyleSwap: No region for slot {newSlotId}");
+            return;
+        }
+
+        // Get monitor offset
+        var targetMonitor = GetTargetMonitor();
+        int offsetX = targetMonitor?.WorkingArea.X ?? 0;
+        int offsetY = targetMonitor?.WorkingArea.Y ?? 0;
+
+        // Parking position (off-screen)
+        var virtualBounds = MonitorManager.GetVirtualScreenBounds();
+        int parkX = virtualBounds.Left - 2000;
+        int parkY = virtualBounds.Top - 2000;
+
+        // Foreground position and SIZE (needs to fit the ForeRegion, not overlap thumbnails)
+        int foreX = newRegion.ForeRegion.X + offsetX;
+        int foreY = newRegion.ForeRegion.Y + offsetY;
+        int foreW = newRegion.ForeRegion.Width;
+        int foreH = newRegion.ForeRegion.Height;
+
+        Debug.WriteLine($"  JmbStyleSwap: old={oldSlotId} -> park({parkX},{parkY}), new={newSlotId} -> fore({foreX},{foreY}) {foreW}x{foreH}");
+
+        // Restore new window if minimized
+        if (newSlot?.MainWindowHandle != IntPtr.Zero && WindowHelper.IsWindowMinimized(newSlot.MainWindowHandle))
+        {
+            User32.ShowWindow(newSlot.MainWindowHandle, ShowWindowCommand.SW_RESTORE);
+        }
+
+        // Batch both moves atomically
+        var hdwp = User32.BeginDeferWindowPos(2);
+        if (hdwp == IntPtr.Zero)
+        {
+            // Fallback to individual moves
+            if (oldSlot?.MainWindowHandle != IntPtr.Zero)
+            {
+                // Park old foreground - SWP_NOSIZE (stays at native resolution for thumbnails)
+                User32.SetWindowPos(oldSlot.MainWindowHandle, IntPtr.Zero, parkX, parkY, 0, 0,
+                    SetWindowPosFlags.SWP_NOSIZE | SetWindowPosFlags.SWP_NOZORDER | SetWindowPosFlags.SWP_NOACTIVATE);
+            }
+            if (newSlot?.MainWindowHandle != IntPtr.Zero)
+            {
+                // Resize and position new foreground to fit ForeRegion
+                User32.SetWindowPos(newSlot.MainWindowHandle, User32.HWND_TOP, foreX, foreY, foreW, foreH,
+                    SetWindowPosFlags.SWP_NOACTIVATE);
+                User32.SetForegroundWindow(newSlot.MainWindowHandle);
+            }
+            return;
+        }
+
+        // Move old foreground to parking (SWP_NOSIZE - stays at native resolution)
+        if (oldSlot?.MainWindowHandle != IntPtr.Zero)
+        {
+            hdwp = User32.DeferWindowPos(hdwp, oldSlot.MainWindowHandle, IntPtr.Zero,
+                parkX, parkY, 0, 0,
+                SetWindowPosFlags.SWP_NOSIZE | SetWindowPosFlags.SWP_NOZORDER | SetWindowPosFlags.SWP_NOACTIVATE);
+        }
+
+        // Resize and position new foreground to ForeRegion (WITH size - needs to fit main area)
+        if (newSlot?.MainWindowHandle != IntPtr.Zero && hdwp != IntPtr.Zero)
+        {
+            hdwp = User32.DeferWindowPos(hdwp, newSlot.MainWindowHandle, User32.HWND_TOP,
+                foreX, foreY, foreW, foreH,
+                SetWindowPosFlags.SWP_NOACTIVATE);
+        }
+
+        if (hdwp != IntPtr.Zero)
+        {
+            User32.EndDeferWindowPos(hdwp);
+        }
+
+        // Activate the new foreground
+        if (newSlot?.MainWindowHandle != IntPtr.Zero)
+        {
+            User32.SetForegroundWindow(newSlot.MainWindowHandle);
+        }
+
+        Debug.WriteLine($"  JmbStyleSwap complete: {oldSlotId} parked, {newSlotId} sized to ForeRegion");
     }
 
     /// <summary>
@@ -292,12 +395,8 @@ public class LayoutEngine
 
         Debug.WriteLine($"  Target monitor: {targetMonitor?.DeviceName ?? "null"} at ({offsetX},{offsetY}) size {targetMonitor?.Width}x{targetMonitor?.Height}");
 
-        // OPTIMIZATION: If initial layout already applied and we're just switching focus, only move two windows
-        if (_initialLayoutApplied && _options.UseThumbnails && previousForegroundSlotId != 0 && previousForegroundSlotId != foregroundSlotId)
-        {
-            SwapTwoWindows(previousForegroundSlotId, foregroundSlotId, activeSlots, offsetX, offsetY, parkingX, parkingYStart);
-            return;
-        }
+        // NOTE: JMB-style optimization is handled in ApplyLayoutWithMain() before calling here
+        // This function is only called for INITIAL layout, not subsequent swaps
 
         // Step 1: Make all windows borderless BEFORE positioning; track which still need it
         var borderlessPending = new List<IntPtr>();
@@ -426,23 +525,12 @@ public class LayoutEngine
         // Mark initial layout as applied - subsequent focus changes will use optimized path
         _initialLayoutApplied = true;
 
-        // Store parked positions for optimization
-        foreach (var slot in activeSlots)
-        {
-            if (slot.Id != foregroundSlotId && _options.UseThumbnails)
-            {
-                // Find the parked position we used
-                var idx = activeSlots.Where(s => s.Id != foregroundSlotId).ToList().IndexOf(slot);
-                if (idx >= 0)
-                {
-                    _parkedPositions[slot.Id] = (parkingX, parkingYStart + idx * parkingStep);
-                }
-            }
-        }
-
         Debug.WriteLine($"========== SwapLayoutOnFocus COMPLETE ==========");
     }
 
+    // NOTE: Disabled for now - using JmbStyleSwap instead
+    // Keeping for potential future use or reversion
+    #if false
     /// <summary>
     /// JMB-style optimized swap: Batch move two windows atomically using DeferWindowPos.
     /// - Previous foreground -> parked position (off-screen)
@@ -507,7 +595,6 @@ public class LayoutEngine
             Debug.WriteLine($"  Deferring slot {previousSlotId} to parked ({parkedX},{parkedY})");
             hdwp = User32.DeferWindowPos(hdwp, previousSlot.MainWindowHandle, IntPtr.Zero,
                 parkedX, parkedY, 0, 0, parkFlags);
-            _parkedPositions[previousSlotId] = (parkedX, parkedY);
         }
 
         // Move new foreground to ForeRegion AND bring to top (HWND_TOP via z-order)
@@ -549,7 +636,6 @@ public class LayoutEngine
         if (previousSlot?.MainWindowHandle != IntPtr.Zero)
         {
             User32.SetWindowPos(previousSlot.MainWindowHandle, IntPtr.Zero, parkedX, parkedY, 0, 0, flags);
-            _parkedPositions[previousSlotId] = (parkedX, parkedY);
         }
 
         if (newSlot?.MainWindowHandle != IntPtr.Zero)
@@ -559,6 +645,7 @@ public class LayoutEngine
             User32.SetForegroundWindow(newSlot.MainWindowHandle);
         }
     }
+    #endif
 
     /// <summary>
     /// Handle foreground slot changes

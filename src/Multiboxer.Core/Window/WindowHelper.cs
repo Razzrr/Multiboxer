@@ -303,6 +303,9 @@ public static class WindowHelper
         }
     }
 
+    // NOTE: Disabled for now - JmbStyleSwap uses DeferWindowPos directly
+    // Keeping for potential future use
+    #if false
     /// <summary>
     /// JMB-style: Batch move windows WITHOUT resizing (SWP_NOSIZE)
     /// Windows stay at their current size, only position changes
@@ -358,6 +361,7 @@ public static class WindowHelper
             }
         }
     }
+    #endif
 
     /// <summary>
     /// Get the desktop window handle

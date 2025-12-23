@@ -5,7 +5,7 @@
         WindowStyle="None"
         AllowsTransparency="False"
         Background="Black"
-        Topmost="True"
+        Topmost="False"
         ShowInTaskbar="False"
         ShowActivated="False"
         ResizeMode="NoResize"
