@@ -1,6 +1,13 @@
-# Multiboxer
+# EQBZ Multiboxer
 
 A customizable multiboxing application for Windows, built with C# and WPF. This is a full-featured replacement for Joe Multiboxer with complete configurability and source code access.
+
+## Download
+
+**[Download Latest Release (v1.0.1)](https://github.com/Razzrr/Multiboxer/releases)**
+
+- **Installer**: `EQBZ_Multiboxer_Setup_1.0.1.exe` - Full installer with Start Menu shortcuts
+- **Portable**: `EQBZ_Multiboxer_v1.0.1.zip` - Extract and run, no installation needed
 
 ## Features
 
@@ -13,6 +20,8 @@ A customizable multiboxing application for Windows, built with C# and WPF. This 
 - **Profile Management**: Save and load game launch configurations
 
 ### Advanced Features
+- **DWM Thumbnails**: Live thumbnail previews of background windows (JMB-style Video FX)
+- **JMB-Style Window Swapping**: Smooth 2-window swap, background windows stay at native resolution
 - **Custom Layout Editor**: Create and edit custom window layouts with visual editor
 - **Virtual File Redirection**: Per-slot configuration files (e.g., `eqclient.ini` → `eqclient.1.ini`)
 - **CPU Affinity Control**: Pin processes to specific CPU cores for performance
@@ -178,7 +187,8 @@ OverlayManager updates overlay windows
 
 - **Window Claiming System**: Static `_claimedWindows` HashSet prevents multiple slots from grabbing the same window during batch launches
 - **ISBoxer-Style Regions**: Each slot has ForeRegion (main window) and BackRegion (thumbnail) - layout swaps positions on focus
-- **Window Parking**: Background windows are moved far off-screen (-2000,-2000) when using thumbnails to avoid visual corruption
+- **JMB-Style Window Swapping**: On focus change, only 2 windows move - old foreground parks off-screen (no resize), new foreground sizes to ForeRegion
+- **Window Parking**: Background windows are moved far off-screen (-2000,-2000) at native resolution - DWM thumbnails show scaled live previews
 - **Batch Positioning**: Uses `DeferWindowPos` for atomic window updates, reducing flicker and DirectX errors
 - **Dual Hotkey Modes**: Supports both Windows `RegisterHotKey` API and low-level keyboard hooks for better game compatibility
 - **DPI-Aware**: Uses monitor working area and DPI scaling for multi-monitor setups
