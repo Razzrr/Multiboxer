@@ -63,4 +63,24 @@ public class LayoutOptions
     /// </summary>
     [JsonPropertyName("useThumbnails")]
     public bool UseThumbnails { get; set; } = true;
+
+    /// <summary>
+    /// Enable split-monitor mode where sessions go to one monitor and thumbnails to another.
+    /// When disabled, all sessions and thumbnails appear on the same target monitor.
+    /// </summary>
+    [JsonPropertyName("useSplitMonitor")]
+    public bool UseSplitMonitor { get; set; } = false;
+
+    /// <summary>
+    /// Index of the monitor for thumbnails in split-monitor mode.
+    /// -1 = auto: first non-primary, or same as sessions if only one monitor.
+    /// </summary>
+    [JsonPropertyName("thumbnailMonitorIndex")]
+    public int ThumbnailMonitorIndex { get; set; } = -1;
+
+    /// <summary>
+    /// Number of columns for thumbnail grid layout in split-monitor mode.
+    /// </summary>
+    [JsonPropertyName("thumbnailColumns")]
+    public int ThumbnailColumns { get; set; } = 2;
 }

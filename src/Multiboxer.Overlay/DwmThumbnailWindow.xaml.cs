@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Media;
 using Multiboxer.Native;
 
 namespace Multiboxer.Overlay;
@@ -225,14 +226,37 @@ public partial class DwmThumbnailWindow : Window
     }
 
     /// <summary>
-    /// Position and size the thumbnail window
+    /// Position and size the thumbnail window (coordinates in physical pixels)
     /// </summary>
     public void SetPosition(int x, int y, int width, int height)
     {
-        Left = x;
-        Top = y;
-        Width = width;
-        Height = height;
+        // WPF uses DIPs (device-independent pixels), not physical pixels
+        // We need to convert physical pixels to DIPs using the DPI scale factor
+        var dpiScale = GetDpiScale();
+
+        Left = x / dpiScale;
+        Top = y / dpiScale;
+        Width = width / dpiScale;
+        Height = height / dpiScale;
+
+        Debug.WriteLine($"DwmThumbnailWindow slot {_slotId}: SetPosition pixels=({x},{y}) {width}x{height} -> DIPs=({Left:F0},{Top:F0}) {Width:F0}x{Height:F0} (scale={dpiScale:F2})");
+    }
+
+    /// <summary>
+    /// Get the DPI scale factor for this window
+    /// </summary>
+    private double GetDpiScale()
+    {
+        // Try to get DPI from the window's presentation source
+        var source = PresentationSource.FromVisual(this);
+        if (source?.CompositionTarget != null)
+        {
+            return source.CompositionTarget.TransformToDevice.M11;
+        }
+
+        // Fallback: use system DPI
+        return System.Windows.SystemParameters.PrimaryScreenHeight /
+               System.Windows.SystemParameters.WorkArea.Height;
     }
 
     /// <summary>
