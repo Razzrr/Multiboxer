@@ -48,3 +48,7 @@ $RECYCLE.BIN/
 # User-specific config
 config/profiles/*.json
 !config/profiles/everquest.json
+
+# Installer build outputs
+publish/
+dist/
