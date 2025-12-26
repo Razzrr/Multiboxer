@@ -2,7 +2,7 @@
 ; Download Inno Setup from: https://jrsoftware.org/isdl.php
 
 #define MyAppName "EQBZ Multiboxer"
-#define MyAppVersion "1.0.1"
+#define MyAppVersion "1.1.0"
 #define MyAppPublisher "EQBZ"
 #define MyAppURL "https://github.com/Razzrr/Multiboxer"
 #define MyAppExeName "Multiboxer.App.exe"
