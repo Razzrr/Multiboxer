@@ -1,3 +1,5 @@
+using Multiboxer.Core.Logging;
+using System.Diagnostics;
 using Multiboxer.Core.Slots;
 using Multiboxer.Core.Window;
 using Multiboxer.Native;

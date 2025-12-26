@@ -3,8 +3,10 @@ using Multiboxer.App.Services;
 using Multiboxer.Core.Config;
 using Multiboxer.Core.Input;
 using Multiboxer.Core.Layout;
+using Multiboxer.Core.Logging;
 using Multiboxer.Core.Performance;
 using Multiboxer.Core.Slots;
+using Multiboxer.Core.State;
 using Multiboxer.Core.VirtualFiles;
 using Multiboxer.Overlay;
 
@@ -25,6 +27,11 @@ public partial class App : Application
     public static AffinityManager AffinityManager { get; private set; } = null!;
     public static TrayIconService TrayIconService { get; private set; } = null!;
     public static VirtualFileManager VirtualFileManager { get; private set; } = null!;
+    public static SwapStateMachine SwapStateMachine { get; private set; } = null!;
+    public static InputMapper InputMapper { get; private set; } = null!;
+
+    // Loading detection timer
+    private System.Timers.Timer? _loadingDetectionTimer;
 
     /// <summary>
     /// Flag to indicate batch launch is in progress - disables per-slot layout updates
@@ -36,6 +43,9 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        // Initialize centralized debug logging (writes to %APPDATA%\Multiboxer\multiboxer_debug.log)
+        DebugLog.Initialize();
 
         // Enable debug logging to file for troubleshooting
         try
@@ -160,6 +170,7 @@ public partial class App : Application
         // Create thumbnail manager (Video FX style)
         ThumbnailManager = new ThumbnailManager();
         ThumbnailManager.ThumbnailClicked += OnThumbnailClicked;
+        ThumbnailManager.ThumbnailsUpdated += OnThumbnailsUpdated;
 
         // Clean up thumbnails when slots disappear
         SlotManager.SlotRemoved += OnSlotRemoved;
@@ -171,6 +182,143 @@ public partial class App : Application
         // Create virtual file manager
         var virtualFilesBackupPath = System.IO.Path.Combine(configPath, "virtualfiles_backup");
         VirtualFileManager = new VirtualFileManager(virtualFilesBackupPath);
+
+        // Create swap state machine for coordinated swap operations
+        SwapStateMachine = new SwapStateMachine();
+        SwapStateMachine.SwapReady += OnSwapReady;
+        SwapStateMachine.SwapCompleted += OnSwapCompleted;
+        SwapStateMachine.StateChanged += OnSwapStateChanged;
+
+        // Create input mapper for DPI-aware coordinate mapping
+        InputMapper = new InputMapper();
+
+        // Start loading detection timer (runs periodically to detect loading/zoning)
+        _loadingDetectionTimer = new System.Timers.Timer(200); // 200ms interval
+        _loadingDetectionTimer.Elapsed += OnLoadingDetectionTick;
+        _loadingDetectionTimer.AutoReset = true;
+        _loadingDetectionTimer.Start();
+    }
+
+    /// <summary>
+    /// Handle swap state machine ready event - execute the actual swap
+    /// </summary>
+    private void OnSwapReady(object? sender, int slotId)
+    {
+        Debug.WriteLine($"SwapStateMachine: Ready to swap to slot {slotId}");
+
+        // Execute on UI thread
+        System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+        {
+            try
+            {
+                var slot = SlotManager.GetSlot(slotId);
+                if (slot == null || !slot.HasProcess)
+                {
+                    Debug.WriteLine($"SwapReady: Slot {slotId} not available");
+                    SwapStateMachine.NotifyLayoutComplete(false);
+                    return;
+                }
+
+                // Focus the window
+                bool focused = slot.Focus();
+                if (!focused)
+                {
+                    Debug.WriteLine($"SwapReady: Failed to focus slot {slotId}");
+                    SwapStateMachine.NotifyLayoutComplete(false);
+                    return;
+                }
+
+                // Apply layout
+                if (LayoutEngine.SlotRegions.Count > 0)
+                {
+                    LayoutEngine.ApplyLayoutWithMain(slotId);
+
+                    // Notify layout complete
+                    SwapStateMachine.NotifyLayoutComplete(true);
+
+                    // Apply thumbnails for background windows
+                    if (LayoutEngine.Options.UseThumbnails)
+                    {
+                        var activeSlots = SlotManager.GetActiveSlots().ToList();
+                        var monitor = GetTargetMonitor();
+                        var bounds = monitor?.WorkingArea;
+                        ThumbnailManager.ApplyLayout(activeSlots, LayoutEngine.SlotRegions, slotId, 0, 0, bounds);
+                        // Force recreation on foreground transition to prevent stale frames
+                        ThumbnailManager.SetForegroundSlot(slotId, forceRecreate: true);
+                    }
+                    else
+                    {
+                        ThumbnailManager.SetForegroundSlot(slotId, forceRecreate: true);
+                    }
+
+                    // Refresh input mapping for the new foreground slot
+                    if (slot.MainWindowHandle != IntPtr.Zero && LayoutEngine.SlotRegions.TryGetValue(slotId, out var region))
+                    {
+                        InputMapper.RefreshMapping(slotId, slot.MainWindowHandle,
+                            region.ForeRegion.X, region.ForeRegion.Y,
+                            region.ForeRegion.Width, region.ForeRegion.Height);
+                    }
+                }
+                else
+                {
+                    SwapStateMachine.NotifyLayoutComplete(false);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"SwapReady error: {ex.Message}");
+                SwapStateMachine.NotifyLayoutComplete(false);
+            }
+        });
+    }
+
+    /// <summary>
+    /// Handle thumbnails updated event from ThumbnailManager
+    /// </summary>
+    private void OnThumbnailsUpdated(object? sender, bool success)
+    {
+        SwapStateMachine.NotifyThumbnailsComplete(success);
+    }
+
+    /// <summary>
+    /// Handle swap completed event
+    /// </summary>
+    private void OnSwapCompleted(object? sender, SwapCompletedEventArgs e)
+    {
+        if (e.Success)
+        {
+            Debug.WriteLine($"Swap to slot {e.SlotId} completed successfully");
+        }
+        else
+        {
+            Debug.WriteLine($"Swap to slot {e.SlotId} failed: {e.Error}");
+        }
+    }
+
+    /// <summary>
+    /// Handle swap state changed event for logging
+    /// </summary>
+    private void OnSwapStateChanged(object? sender, SwapState newState)
+    {
+        Debug.WriteLine($"SwapStateMachine state: {newState}");
+    }
+
+    /// <summary>
+    /// Periodic loading detection check
+    /// </summary>
+    private void OnLoadingDetectionTick(object? sender, System.Timers.ElapsedEventArgs e)
+    {
+        try
+        {
+            foreach (var slot in SlotManager.GetActiveSlots())
+            {
+                slot.UpdateLoadingState();
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Loading detection error: {ex.Message}");
+        }
     }
 
     private void OnHotkeyPressed(object? sender, HotkeyEventArgs e)
@@ -185,12 +333,19 @@ public partial class App : Application
             if (slot == null || !slot.HasProcess)
             {
                 Debug.WriteLine($"Hotkey for slot {slotId} ignored - slot not active");
+                DebugLog.HotkeyIgnored(slotId, "slot not active");
                 return;
             }
 
-            // ISBoxer-style approach: Focus first, then apply layout
-            // Using async to allow proper sequencing without blocking
-            _ = FocusAndApplyLayoutAsync(slotId);
+            // Use SwapStateMachine for coordinated swapping with debouncing and coalescing
+            // This prevents "catch-up" behavior when keys are spammed during loading
+            bool isLoading = slot.IsLoading;
+            bool queued = SwapStateMachine.RequestSwap(slotId, isLoading);
+
+            if (!queued)
+            {
+                Debug.WriteLine($"Hotkey for slot {slotId} rejected by state machine");
+            }
         }
         else
         {
@@ -198,10 +353,30 @@ public partial class App : Application
             switch (e.Action.ToLowerInvariant())
             {
                 case "nextwindow":
-                    _ = FocusNextAndApplyLayoutAsync();
+                    {
+                        var focusedSlot = SlotManager.FocusedSlot;
+                        var activeSlots = SlotManager.GetActiveSlots().ToList();
+                        if (activeSlots.Count > 0)
+                        {
+                            int currentIndex = focusedSlot != null ? activeSlots.FindIndex(s => s.Id == focusedSlot.Id) : -1;
+                            int nextIndex = (currentIndex + 1) % activeSlots.Count;
+                            var nextSlot = activeSlots[nextIndex];
+                            SwapStateMachine.RequestSwap(nextSlot.Id, nextSlot.IsLoading);
+                        }
+                    }
                     break;
                 case "previouswindow":
-                    _ = FocusPreviousAndApplyLayoutAsync();
+                    {
+                        var focusedSlot = SlotManager.FocusedSlot;
+                        var activeSlots = SlotManager.GetActiveSlots().ToList();
+                        if (activeSlots.Count > 0)
+                        {
+                            int currentIndex = focusedSlot != null ? activeSlots.FindIndex(s => s.Id == focusedSlot.Id) : 0;
+                            int prevIndex = (currentIndex - 1 + activeSlots.Count) % activeSlots.Count;
+                            var prevSlot = activeSlots[prevIndex];
+                            SwapStateMachine.RequestSwap(prevSlot.Id, prevSlot.IsLoading);
+                        }
+                    }
                     break;
             }
         }
@@ -472,7 +647,11 @@ public partial class App : Application
     private void OnThumbnailClicked(object? sender, Multiboxer.Overlay.ThumbnailClickEventArgs e)
     {
         Debug.WriteLine($"Thumbnail clicked: slot {e.SlotId}");
-        _ = FocusAndApplyLayoutAsync(e.SlotId);
+        var slot = SlotManager.GetSlot(e.SlotId);
+        if (slot != null && slot.HasProcess)
+        {
+            SwapStateMachine.RequestSwap(e.SlotId, slot.IsLoading);
+        }
     }
 
     /// <summary>
@@ -586,10 +765,24 @@ public partial class App : Application
         // Cleanup virtual files (restore original files)
         VirtualFileManager.CleanupAll();
 
+        // Stop loading detection timer
+        _loadingDetectionTimer?.Stop();
+        _loadingDetectionTimer?.Dispose();
+
+        // Cleanup swap state machine
+        SwapStateMachine.SwapReady -= OnSwapReady;
+        SwapStateMachine.SwapCompleted -= OnSwapCompleted;
+        SwapStateMachine.StateChanged -= OnSwapStateChanged;
+        SwapStateMachine.Dispose();
+
+        // Clear input mappings
+        InputMapper.Clear();
+
         // Cleanup
         HotkeyManager.HotkeyPressed -= OnHotkeyPressed;
         SlotManager.SlotActivated -= OnSlotActivated;
         ThumbnailManager.ThumbnailClicked -= OnThumbnailClicked;
+        ThumbnailManager.ThumbnailsUpdated -= OnThumbnailsUpdated;
         SlotManager.SlotRemoved -= OnSlotRemoved;
         SlotManager.SlotProcessExited -= OnSlotProcessExited;
         HotkeyManager.Dispose();
@@ -597,6 +790,9 @@ public partial class App : Application
         ThumbnailManager.Clear();
         TrayIconService.Dispose();
         SlotManager.Dispose();
+
+        // Shutdown debug logging
+        DebugLog.Shutdown();
 
         base.OnExit(e);
     }

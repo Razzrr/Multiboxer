@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.RegularExpressions;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Multiboxer.Core.Config;
+using Multiboxer.Core.Logging;
 using Multiboxer.Core.Window;
 
 namespace Multiboxer.Core.Slots;
@@ -156,6 +157,41 @@ public partial class Slot : ObservableObject, IDisposable
     /// </summary>
     [ObservableProperty]
     private int _windowHeight;
+
+    /// <summary>
+    /// Whether the slot is currently in a loading/zoning state
+    /// </summary>
+    [ObservableProperty]
+    private bool _isLoading;
+
+    /// <summary>
+    /// Timestamp of last loading state change
+    /// </summary>
+    private DateTime _lastLoadingChange = DateTime.MinValue;
+
+    /// <summary>
+    /// Previous window title for loading detection
+    /// </summary>
+    private string _previousWindowTitle = string.Empty;
+
+    /// <summary>
+    /// Previous window rect for stability detection
+    /// </summary>
+    private Native.RECT _previousWindowRect;
+
+    /// <summary>
+    /// Count of consecutive rect stability checks
+    /// </summary>
+    private int _rectStabilityCount;
+
+    /// <summary>
+    /// Loading detection keywords in window titles
+    /// </summary>
+    private static readonly string[] LoadingKeywords = new[]
+    {
+        "loading", "zoning", "please wait", "connecting",
+        "entering", "Loading...", "EverQuest"  // EQ shows just "EverQuest" during zone
+    };
 
     /// <summary>
     /// Whether this slot has a running process
@@ -350,6 +386,128 @@ public partial class Slot : ObservableObject, IDisposable
             {
                 // Process may have exited
             }
+        }
+    }
+
+    /// <summary>
+    /// Check and update loading/zoning state.
+    /// Call this periodically (e.g., every 100-200ms) during active usage.
+    /// </summary>
+    /// <returns>True if the loading state changed</returns>
+    public bool UpdateLoadingState()
+    {
+        if (MainWindowHandle == IntPtr.Zero || Process == null || Process.HasExited)
+        {
+            if (IsLoading)
+            {
+                SetLoadingState(false, "no window");
+                return true;
+            }
+            return false;
+        }
+
+        // Heuristic 1: Check window title for loading keywords
+        string currentTitle = WindowTitle;
+        bool titleIndicatesLoading = false;
+
+        if (!string.IsNullOrEmpty(currentTitle))
+        {
+            foreach (var keyword in LoadingKeywords)
+            {
+                if (currentTitle.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+                {
+                    // Special case: "EverQuest" alone usually means loading
+                    // but "EverQuest - CharName" means loaded
+                    if (keyword == "EverQuest" && currentTitle.Contains(" - "))
+                        continue;
+
+                    titleIndicatesLoading = true;
+                    break;
+                }
+            }
+        }
+
+        // Heuristic 2: Check window rect stability
+        // During loading, the window rect may be unstable or minimized
+        bool rectStable = true;
+        if (Native.User32.GetWindowRect(MainWindowHandle, out var currentRect))
+        {
+            bool rectsMatch = currentRect.Left == _previousWindowRect.Left &&
+                             currentRect.Top == _previousWindowRect.Top &&
+                             currentRect.Width == _previousWindowRect.Width &&
+                             currentRect.Height == _previousWindowRect.Height;
+
+            if (rectsMatch)
+            {
+                _rectStabilityCount++;
+            }
+            else
+            {
+                _rectStabilityCount = 0;
+            }
+
+            // Consider rect stable if it's been the same for 3+ checks
+            rectStable = _rectStabilityCount >= 3;
+            _previousWindowRect = currentRect;
+
+            // Zero-sized or minimized window suggests loading
+            if (currentRect.Width <= 0 || currentRect.Height <= 0)
+            {
+                titleIndicatesLoading = true;
+            }
+        }
+
+        // Heuristic 3: Title changed significantly (zone transition)
+        bool titleChanged = !string.IsNullOrEmpty(_previousWindowTitle) &&
+                           !string.IsNullOrEmpty(currentTitle) &&
+                           _previousWindowTitle != currentTitle;
+
+        _previousWindowTitle = currentTitle;
+
+        // Combine heuristics
+        bool nowLoading = titleIndicatesLoading || (!rectStable && titleChanged);
+
+        // Debounce: require loading state to persist for a bit before reporting
+        if (nowLoading != IsLoading)
+        {
+            // Only transition to loading immediately, but require stability to exit loading
+            if (nowLoading)
+            {
+                SetLoadingState(true, $"title={titleIndicatesLoading}, rectStable={rectStable}");
+                return true;
+            }
+            else if (rectStable && _rectStabilityCount >= 5)
+            {
+                // Require more stability before exiting loading state
+                SetLoadingState(false, "rect stabilized");
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Set loading state with logging
+    /// </summary>
+    private void SetLoadingState(bool loading, string reason)
+    {
+        bool wasLoading = IsLoading;
+        IsLoading = loading;
+        _lastLoadingChange = DateTime.Now;
+
+        DebugLog.LoadingStateChanged(Id, wasLoading, loading);
+        DebugLog.LoadingDetection(Id, loading, WindowTitle, _rectStabilityCount >= 3, false);
+    }
+
+    /// <summary>
+    /// Force exit loading state (e.g., after user interaction confirms window is responsive)
+    /// </summary>
+    public void ClearLoadingState()
+    {
+        if (IsLoading)
+        {
+            SetLoadingState(false, "manually cleared");
         }
     }
 

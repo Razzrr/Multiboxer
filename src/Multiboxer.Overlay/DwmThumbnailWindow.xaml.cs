@@ -226,6 +226,40 @@ public partial class DwmThumbnailWindow : Window
     }
 
     /// <summary>
+    /// Force recreation of the thumbnail by clearing the handle.
+    /// Call this when the source window transitions from foreground to background
+    /// to prevent stale frame bleed-through.
+    /// </summary>
+    public void ForceRecreate()
+    {
+        var sourceBackup = _sourceWindow;
+        UnregisterThumbnail();
+        _sourceWindow = IntPtr.Zero;  // Force SetSource to re-register
+        Debug.WriteLine($"DwmThumbnailWindow slot {_slotId}: ForceRecreate - cleared thumbnail handle");
+        if (sourceBackup != IntPtr.Zero)
+        {
+            SetSource(sourceBackup);
+        }
+    }
+
+    /// <summary>
+    /// Clear the surface to black to prevent stale frame bleed-through.
+    /// </summary>
+    public void ClearSurface()
+    {
+        ThumbnailBorder.Background = Brushes.Black;
+        Debug.WriteLine($"DwmThumbnailWindow slot {_slotId}: Surface cleared to black");
+    }
+
+    /// <summary>
+    /// Restore the surface after clearing.
+    /// </summary>
+    public void RestoreSurface()
+    {
+        ThumbnailBorder.Background = Brushes.Transparent;
+    }
+
+    /// <summary>
     /// Position and size the thumbnail window (coordinates in physical pixels)
     /// </summary>
     public void SetPosition(int x, int y, int width, int height)

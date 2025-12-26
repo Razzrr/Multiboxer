@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using Multiboxer.Core.Logging;
 using System.Windows;
 using Multiboxer.Core.Layout;
 using Multiboxer.Core.Slots;
@@ -51,6 +53,7 @@ public class ThumbnailManager
         {
             lock (_lock)
             {
+                bool isNew = false;
                 if (!_thumbnails.TryGetValue(slotId, out var thumbnail) || thumbnail.IsClosed)
                 {
                     // Create new thumbnail window
@@ -63,6 +66,7 @@ public class ThumbnailManager
                     // Subscribe to click events
                     thumbnail.ThumbnailClicked += OnThumbnailClicked;
                     _thumbnails[slotId] = thumbnail;
+                    isNew = true;
                 }
 
                 // Set position first
@@ -77,7 +81,16 @@ public class ThumbnailManager
                 }
 
                 // Now set the source - window handle is available after Show()
-                thumbnail.SetSource(sourceWindow);
+                bool success = thumbnail.SetSource(sourceWindow);
+
+                if (isNew)
+                {
+                    DebugLog.ThumbnailCreated(slotId, sourceWindow, IntPtr.Zero, x, y, width, height);
+                }
+                else
+                {
+                    DebugLog.ThumbnailRefreshed(slotId, IntPtr.Zero, false);
+                }
             }
         });
     }
@@ -99,6 +112,7 @@ public class ThumbnailManager
                         thumbnail.Close();
                     }
                     _thumbnails.Remove(slotId);
+                    DebugLog.ThumbnailDestroyed(slotId, IntPtr.Zero, "removed");
                 }
             }
         });
@@ -147,15 +161,48 @@ public class ThumbnailManager
     }
 
     /// <summary>
+    /// Event raised when thumbnail updates are complete after a swap
+    /// </summary>
+    public event EventHandler<bool>? ThumbnailsUpdated;
+
+    /// <summary>
     /// Set which slot is in the foreground (its thumbnail will be hidden)
     /// </summary>
     public void SetForegroundSlot(int slotId)
     {
+        SetForegroundSlot(slotId, forceRecreate: false);
+    }
+
+    /// <summary>
+    /// Set which slot is in the foreground with optional force recreation
+    /// </summary>
+    /// <param name="slotId">The slot to set as foreground</param>
+    /// <param name="forceRecreate">Force thumbnail recreation to prevent stale frames</param>
+    public void SetForegroundSlot(int slotId, bool forceRecreate)
+    {
+        int previousForeground;
         lock (_lock)
         {
-            // Show the previous foreground's thumbnail
+            previousForeground = _foregroundSlotId;
+
+            // If there's a previous foreground slot that's transitioning to background
             if (_foregroundSlotId > 0 && _foregroundSlotId != slotId)
             {
+                DebugLog.ThumbnailVisibility(_foregroundSlotId, true, "transitioning to background");
+
+                // Force recreate the thumbnail for the slot that was foreground
+                // This prevents stale frame bleed-through
+                if (forceRecreate && _thumbnails.TryGetValue(_foregroundSlotId, out var prevThumb) && !prevThumb.IsClosed)
+                {
+                    ExecuteOnUi(() =>
+                    {
+                        prevThumb.ClearSurface();
+                        prevThumb.ForceRecreate();
+                        prevThumb.RestoreSurface();
+                    });
+                    DebugLog.ThumbnailRefreshed(_foregroundSlotId, IntPtr.Zero, true);
+                }
+
                 ShowThumbnail(_foregroundSlotId);
             }
 
@@ -164,9 +211,13 @@ public class ThumbnailManager
             // Hide the new foreground's thumbnail
             if (_foregroundSlotId > 0)
             {
+                DebugLog.ThumbnailVisibility(_foregroundSlotId, false, "now foreground");
                 HideThumbnail(_foregroundSlotId);
             }
         }
+
+        // Notify that thumbnail updates are complete
+        ThumbnailsUpdated?.Invoke(this, true);
     }
 
     /// <summary>
