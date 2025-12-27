@@ -382,4 +382,25 @@ public static class DebugLog
     }
 
     #endregion
+
+    #region Swap Timing
+
+    /// <summary>
+    /// Log swap timing breakdown
+    /// </summary>
+    public static void SwapTiming(int slotId, double layoutMs, double focusMs, double thumbnailMs, double totalMs, bool foregroundWasZoning)
+    {
+        Log("TIMING", $"Swap slot={slotId}: layout={layoutMs:F1}ms, focus={focusMs:F1}ms, thumb={thumbnailMs:F1}ms, total={totalMs:F1}ms, fgZoning={foregroundWasZoning}");
+    }
+
+    /// <summary>
+    /// Log swap blocked or allowed
+    /// </summary>
+    public static void SwapGateDecision(int slotId, bool allowed, string reason)
+    {
+        var status = allowed ? "ALLOWED" : "BLOCKED";
+        Log("GATE", $"Swap [{status}]: slot={slotId}, reason={reason}");
+    }
+
+    #endregion
 }

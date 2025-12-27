@@ -428,8 +428,8 @@ public class LayoutEngine
                     _protectedWindows.Add(hwnd);
                 }
             }
-            // Small delay to let style changes take effect before positioning
-            System.Threading.Thread.Sleep(30);
+            // NOTE: Removed Thread.Sleep(30) - it blocked the UI thread and caused swap delays
+            // Style changes take effect immediately with SWP_FRAMECHANGED in MakeBorderless
         }
 
         // Step 2: Build list of window positions for batch update

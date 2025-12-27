@@ -9,7 +9,11 @@ namespace Multiboxer.Core.Window;
 public static class WindowHelper
 {
     /// <summary>
-    /// Force a window to the foreground, working around Windows restrictions
+    /// Force a window to the foreground, working around Windows restrictions.
+    /// IMPORTANT: This version does NOT attach to the current foreground window's thread,
+    /// which would block if that window is unresponsive (e.g., during EQ zoning).
+    /// Instead, it attaches to the TARGET window's thread, which is always responsive
+    /// (the window we're trying to focus is the one NOT zoning).
     /// </summary>
     public static bool ForceForegroundWindow(IntPtr hWnd)
     {
@@ -22,28 +26,26 @@ public static class WindowHelper
         if (foregroundWindow == hWnd)
             return true;
 
-        // Get thread IDs
-        var foregroundThreadId = User32.GetWindowThreadProcessId(foregroundWindow, out _);
+        // Get thread IDs - NOTE: We attach to TARGET thread, not foreground thread
+        // This is critical: the foreground window may be unresponsive (zoning)
         var targetThreadId = User32.GetWindowThreadProcessId(hWnd, out var targetProcessId);
         var currentThreadId = User32.GetCurrentThreadId();
 
-        bool attached = false;
+        bool attachedToTarget = false;
 
         try
         {
-            // Attach to the foreground thread if different
-            if (foregroundThreadId != currentThreadId)
-            {
-                attached = User32.AttachThreadInput(currentThreadId, foregroundThreadId, true);
-            }
-
-            // Allow our process to set the foreground window
+            // Allow the target process to set foreground window
             User32.AllowSetForegroundWindow((int)targetProcessId);
 
-            // Try to bring window to foreground
-            User32.BringWindowToTop(hWnd);
+            // Attach to the TARGET window's thread (NOT the foreground window's thread!)
+            // This is safe because the target is the window we want to focus, not the zoning one
+            if (targetThreadId != currentThreadId)
+            {
+                attachedToTarget = User32.AttachThreadInput(currentThreadId, targetThreadId, true);
+            }
 
-            // If minimized, restore it
+            // If minimized, restore it first
             if (User32.IsIconic(hWnd))
             {
                 User32.ShowWindow(hWnd, ShowWindowCommand.SW_RESTORE);
@@ -53,20 +55,63 @@ public static class WindowHelper
                 User32.ShowWindow(hWnd, ShowWindowCommand.SW_SHOW);
             }
 
-            // Set foreground
+            // Bring to top of Z-order
+            User32.BringWindowToTop(hWnd);
+
+            // Set foreground - this is the main focus call
             User32.SetForegroundWindow(hWnd);
 
-            // Double-check with SetFocus
+            // Also set focus for input
             User32.SetFocus(hWnd);
 
             return User32.GetForegroundWindow() == hWnd;
         }
         finally
         {
-            if (attached)
+            if (attachedToTarget)
             {
-                User32.AttachThreadInput(currentThreadId, foregroundThreadId, false);
+                User32.AttachThreadInput(currentThreadId, targetThreadId, false);
             }
+        }
+    }
+
+    /// <summary>
+    /// Non-blocking focus attempt that returns quickly even if foreground is unresponsive.
+    /// Use this when swapping during zoning - it won't block on the zoning window.
+    /// </summary>
+    public static bool TryFocusWindowNonBlocking(IntPtr hWnd)
+    {
+        if (hWnd == IntPtr.Zero)
+            return false;
+
+        var foregroundWindow = User32.GetForegroundWindow();
+        if (foregroundWindow == hWnd)
+            return true;
+
+        // Get target process ID for AllowSetForegroundWindow
+        User32.GetWindowThreadProcessId(hWnd, out var targetProcessId);
+
+        try
+        {
+            // Allow the target process to set foreground
+            User32.AllowSetForegroundWindow((int)targetProcessId);
+
+            // Restore if minimized
+            if (User32.IsIconic(hWnd))
+            {
+                User32.ShowWindow(hWnd, ShowWindowCommand.SW_RESTORE);
+            }
+
+            // Direct approach: just SetForegroundWindow without thread attachment
+            // This is Joe Multiboxer's approach - works because we use AllowSetForegroundWindow
+            User32.SetForegroundWindow(hWnd);
+
+            // Verify
+            return User32.GetForegroundWindow() == hWnd;
+        }
+        catch
+        {
+            return false;
         }
     }
 

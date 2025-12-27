@@ -200,11 +200,22 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// Handle swap state machine ready event - execute the actual swap
+    /// Handle swap state machine ready event - execute the actual swap.
+    /// ZONING-SAFE: This method does NOT block on unresponsive foreground windows.
+    /// Layout is always applied even if focus verification fails.
     /// </summary>
     private void OnSwapReady(object? sender, int slotId)
     {
+        var swapStart = DateTime.Now;
         Debug.WriteLine($"SwapStateMachine: Ready to swap to slot {slotId}");
+
+        // Check if current foreground slot is loading/zoning
+        var currentForegroundId = LayoutEngine.CurrentForegroundSlotId;
+        var currentForegroundSlot = currentForegroundId > 0 ? SlotManager.GetSlot(currentForegroundId) : null;
+        bool foregroundIsZoning = currentForegroundSlot?.IsLoading ?? false;
+
+        DebugLog.SwapQueueDecision(slotId, currentForegroundId,
+            $"executing swap, foregroundZoning={foregroundIsZoning}");
 
         // Execute on UI thread
         System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
@@ -215,58 +226,79 @@ public partial class App : Application
                 if (slot == null || !slot.HasProcess)
                 {
                     Debug.WriteLine($"SwapReady: Slot {slotId} not available");
+                    DebugLog.SwapQueueDecision(slotId, null, "aborted - slot not available");
                     SwapStateMachine.NotifyLayoutComplete(false);
                     return;
                 }
 
-                // Focus the window
-                bool focused = slot.Focus();
-                if (!focused)
-                {
-                    Debug.WriteLine($"SwapReady: Failed to focus slot {slotId}");
-                    SwapStateMachine.NotifyLayoutComplete(false);
-                    return;
-                }
-
-                // Apply layout
+                // PHASE 1: Apply layout FIRST (does not depend on focus)
+                // This moves windows to their correct positions regardless of focus state
+                var layoutStart = DateTime.Now;
                 if (LayoutEngine.SlotRegions.Count > 0)
                 {
                     LayoutEngine.ApplyLayoutWithMain(slotId);
+                    var layoutMs = (DateTime.Now - layoutStart).TotalMilliseconds;
+                    Debug.WriteLine($"SwapReady: Layout applied in {layoutMs:F1}ms");
+                }
 
-                    // Notify layout complete
-                    SwapStateMachine.NotifyLayoutComplete(true);
+                // PHASE 2: Focus the window (non-blocking, won't hang on zoning foreground)
+                // Even if this fails, the layout was already applied correctly
+                var focusStart = DateTime.Now;
+                bool focused = false;
 
-                    // Apply thumbnails for background windows
-                    if (LayoutEngine.Options.UseThumbnails)
+                if (slot.MainWindowHandle != IntPtr.Zero)
+                {
+                    // First try non-blocking focus (Joe Multiboxer style)
+                    focused = Multiboxer.Core.Window.WindowHelper.TryFocusWindowNonBlocking(slot.MainWindowHandle);
+
+                    if (!focused)
                     {
-                        var activeSlots = SlotManager.GetActiveSlots().ToList();
-                        var monitor = GetTargetMonitor();
-                        var bounds = monitor?.WorkingArea;
-                        ThumbnailManager.ApplyLayout(activeSlots, LayoutEngine.SlotRegions, slotId, 0, 0, bounds);
-                        // Force recreation on foreground transition to prevent stale frames
-                        ThumbnailManager.SetForegroundSlot(slotId, forceRecreate: true);
-                    }
-                    else
-                    {
-                        ThumbnailManager.SetForegroundSlot(slotId, forceRecreate: true);
+                        // Fallback: Use the full focus method (attaches to TARGET thread, not foreground)
+                        focused = slot.Focus();
                     }
 
-                    // Refresh input mapping for the new foreground slot
-                    if (slot.MainWindowHandle != IntPtr.Zero && LayoutEngine.SlotRegions.TryGetValue(slotId, out var region))
-                    {
-                        InputMapper.RefreshMapping(slotId, slot.MainWindowHandle,
-                            region.ForeRegion.X, region.ForeRegion.Y,
-                            region.ForeRegion.Width, region.ForeRegion.Height);
-                    }
+                    var focusMs = (DateTime.Now - focusStart).TotalMilliseconds;
+                    DebugLog.FocusOperation(slotId, slot.MainWindowHandle,
+                        focused ? "succeeded" : "failed", focused);
+                    Debug.WriteLine($"SwapReady: Focus {(focused ? "succeeded" : "failed")} in {focusMs:F1}ms");
+                }
+
+                // Notify layout complete (even if focus failed - layout was applied)
+                SwapStateMachine.NotifyLayoutComplete(true);
+
+                // PHASE 3: Update thumbnails
+                var thumbStart = DateTime.Now;
+                if (LayoutEngine.Options.UseThumbnails)
+                {
+                    var activeSlots = SlotManager.GetActiveSlots().ToList();
+                    var monitor = GetTargetMonitor();
+                    var bounds = monitor?.WorkingArea;
+                    ThumbnailManager.ApplyLayout(activeSlots, LayoutEngine.SlotRegions, slotId, 0, 0, bounds);
+                    // Force recreation on foreground transition to prevent stale frames
+                    ThumbnailManager.SetForegroundSlot(slotId, forceRecreate: true);
                 }
                 else
                 {
-                    SwapStateMachine.NotifyLayoutComplete(false);
+                    ThumbnailManager.SetForegroundSlot(slotId, forceRecreate: true);
                 }
+                var thumbMs = (DateTime.Now - thumbStart).TotalMilliseconds;
+                Debug.WriteLine($"SwapReady: Thumbnails updated in {thumbMs:F1}ms");
+
+                // PHASE 4: Refresh input mapping for the new foreground slot
+                if (slot.MainWindowHandle != IntPtr.Zero && LayoutEngine.SlotRegions.TryGetValue(slotId, out var region))
+                {
+                    InputMapper.RefreshMapping(slotId, slot.MainWindowHandle,
+                        region.ForeRegion.X, region.ForeRegion.Y,
+                        region.ForeRegion.Width, region.ForeRegion.Height);
+                }
+
+                var totalMs = (DateTime.Now - swapStart).TotalMilliseconds;
+                Debug.WriteLine($"SwapReady: Total swap completed in {totalMs:F1}ms");
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"SwapReady error: {ex.Message}");
+                DebugLog.SwapQueueDecision(slotId, null, $"error: {ex.Message}");
                 SwapStateMachine.NotifyLayoutComplete(false);
             }
         });
