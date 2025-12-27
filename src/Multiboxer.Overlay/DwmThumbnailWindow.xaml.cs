@@ -168,7 +168,9 @@ public partial class DwmThumbnailWindow : Window
     }
 
     /// <summary>
-    /// Update the thumbnail display properties
+    /// Update the thumbnail display properties.
+    /// Uses "Cover" scaling mode: scales source to fill destination completely,
+    /// cropping the excess (no letterboxing/padding).
     /// </summary>
     public void UpdateThumbnailProperties()
     {
@@ -185,14 +187,47 @@ public partial class DwmThumbnailWindow : Window
         if (destWidth <= 0) destWidth = (int)Width;
         if (destHeight <= 0) destHeight = (int)Height;
 
-        Debug.WriteLine($"DwmThumbnailWindow slot {_slotId}: UpdateProps dest={destWidth}x{destHeight}, source={sourceSize.cx}x{sourceSize.cy}");
+        // Avoid division by zero
+        if (sourceSize.cx <= 0 || sourceSize.cy <= 0 || destWidth <= 0 || destHeight <= 0)
+        {
+            Debug.WriteLine($"DwmThumbnailWindow slot {_slotId}: Invalid dimensions, skipping update");
+            return;
+        }
 
-        // Calculate destination rectangle (fill the window)
-        // DWM automatically scales the source to fit the destination
+        // Calculate aspect ratios for Cover mode scaling
+        double sourceAspect = (double)sourceSize.cx / sourceSize.cy;
+        double destAspect = (double)destWidth / destHeight;
+
+        // Cover mode: calculate source rectangle to crop for fill scaling
+        // This eliminates letterboxing by cropping the source to match destination aspect ratio
+        int srcLeft = 0, srcTop = 0, srcRight = sourceSize.cx, srcBottom = sourceSize.cy;
+
+        if (sourceAspect > destAspect)
+        {
+            // Source is wider - crop left/right
+            int visibleWidth = (int)(sourceSize.cy * destAspect);
+            int offset = (sourceSize.cx - visibleWidth) / 2;
+            srcLeft = offset;
+            srcRight = sourceSize.cx - offset;
+        }
+        else if (sourceAspect < destAspect)
+        {
+            // Source is taller - crop top/bottom
+            int visibleHeight = (int)(sourceSize.cx / destAspect);
+            int offset = (sourceSize.cy - visibleHeight) / 2;
+            srcTop = offset;
+            srcBottom = sourceSize.cy - offset;
+        }
+        // If aspects match, use full source (no cropping needed)
+
+        Debug.WriteLine($"DwmThumbnailWindow slot {_slotId}: Cover mode - dest={destWidth}x{destHeight}, source={sourceSize.cx}x{sourceSize.cy}, crop=({srcLeft},{srcTop})-({srcRight},{srcBottom})");
+
+        // Set both source and destination rectangles for Cover scaling
         var props = new DWM_THUMBNAIL_PROPERTIES
         {
             dwFlags = DwmThumbnailFlags.DWM_TNP_VISIBLE |
                       DwmThumbnailFlags.DWM_TNP_RECTDESTINATION |
+                      DwmThumbnailFlags.DWM_TNP_RECTSOURCE |
                       DwmThumbnailFlags.DWM_TNP_OPACITY,
             fVisible = true,
             fSourceClientAreaOnly = false,  // Capture entire window, not just client area
@@ -203,6 +238,13 @@ public partial class DwmThumbnailWindow : Window
                 Top = 0,
                 Right = destWidth,
                 Bottom = destHeight
+            },
+            rcSource = new RECT
+            {
+                Left = srcLeft,
+                Top = srcTop,
+                Right = srcRight,
+                Bottom = srcBottom
             }
         };
 

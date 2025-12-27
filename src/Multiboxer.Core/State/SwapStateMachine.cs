@@ -69,8 +69,10 @@ public class SwapStateMachine
     private int _coalescedCount;
 
     // Timing configuration
-    private readonly TimeSpan _debounceWindow = TimeSpan.FromMilliseconds(150);
-    private readonly TimeSpan _stabilizeWindow = TimeSpan.FromMilliseconds(50);
+    // Reduced debounce from 150ms to 30ms - fast enough to coalesce rapid keypresses
+    // but short enough that swaps feel instant. Joe Multiboxer uses no debounce.
+    private readonly TimeSpan _debounceWindow = TimeSpan.FromMilliseconds(30);
+    private readonly TimeSpan _stabilizeWindow = TimeSpan.FromMilliseconds(30);
     private readonly TimeSpan _maxSwapDuration = TimeSpan.FromMilliseconds(500);
 
     // Debounce timer
@@ -120,10 +122,13 @@ public class SwapStateMachine
 
     public SwapStateMachine()
     {
+        // Timer intervals are set from the timing configuration above
+        // 30ms debounce: fast response while still coalescing rapid keypresses
         _debounceTimer = new System.Timers.Timer(_debounceWindow.TotalMilliseconds);
         _debounceTimer.AutoReset = false;
         _debounceTimer.Elapsed += OnDebounceElapsed;
 
+        // 30ms stabilize: minimal delay after swap before accepting new requests
         _stabilizeTimer = new System.Timers.Timer(_stabilizeWindow.TotalMilliseconds);
         _stabilizeTimer.AutoReset = false;
         _stabilizeTimer.Elapsed += OnStabilizeElapsed;
